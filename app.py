@@ -102,7 +102,8 @@ def init_gemini_model():
     if not api_key:
         return None
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-2.0-flash")
+    return genai.GenerativeModel("gemini-3.6-flash")
+
 
 
 @st.cache_resource(show_spinner=False)
