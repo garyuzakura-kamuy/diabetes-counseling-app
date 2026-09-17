@@ -209,9 +209,10 @@ def get_patient_history(patient_id: str) -> pd.DataFrame:
 # =====================================================================
 # Gemini プロンプト構築
 # =====================================================================
-def build_prompt(visit_type, medications, drinks_alcohol, user_labs):
+def build_prompt(patient, standard_data, additional_data, symptoms, medications, hist_df, *args, **kwargs):
     """
     カウンセラー向けAI解析用プロンプトを構築する関数
+    ※アプリ側からの6つの引数呼び出しに完全一致させた安全設計
     """
     system_instruction = """
 あなたはミトコンドリア活性化と栄養補給による代謝改善を支援するプロのカウンセラー補助AIです。
@@ -223,6 +224,9 @@ def build_prompt(visit_type, medications, drinks_alcohol, user_labs):
 - 最終目標：細胞機能を高め、低血糖傾向などの改善兆候が出た段階で「主治医へ相談して減薬・寛解を目指す」安全なストーリーを提示する。
 """
 
+    # 履歴データの有無で初回か2回目以降かを自動判定
+    visit_type = "2回目以降" if hist_df is not None and str(hist_df).strip() != "" and str(hist_df).strip() != "None" else "初回"
+    
     visit_logic = ""
     if visit_type == "初回":
         visit_logic = """
@@ -244,17 +248,21 @@ def build_prompt(visit_type, medications, drinks_alcohol, user_labs):
     if not medications:
         med_warning_logic += "- 現在服用中の対象薬剤なし。\n"
     else:
-        if "メトホルミン系" in medications:
+        meds_str = str(medications)
+        if "メトホルミン" in meds_str:
             med_warning_logic += "- メトホルミン：腸内でのビタミンB12吸収阻害リスク。神経障害や隠れ貧血に注意。\n"
-        if "スタチン系（コレステロール）" in medications:
+        if "スタチン" in meds_str or "コレステロール" in meds_str:
             med_warning_logic += "- スタチン系：肝臓でのCoQ10合成阻害。還元型CoQ10の必須補給を提示。\n"
-        if "利尿剤・降圧薬" in medications:
+        if "利尿剤" in meds_str or "降圧薬" in meds_str:
             med_warning_logic += "- 降圧薬/利尿剤：マグネシウム・亜鉛の尿中排泄増加。シトルリン/アルギニン併用時は低血圧を防ぐため服薬と2時間以上離して就寝前に摂取。\n"
-        if "GLP-1/GIP受容体作動薬" in medications:
+        if "GLP-1" in meds_str or "GIP" in meds_str or "マンジャロ" in meds_str:
             med_warning_logic += "- GLP-1/GIP作動薬（マンジャロ等）：食欲抑制によるタンパク質・微量ミネラル不足、筋肉量低下リスクへの栄養フォロー。\n"
-        if "ワルファリン（抗凝固薬）" in medications:
+        if "ワルファリン" in meds_str:
             med_warning_logic += "- ⚠️重要警告：ワルファリン服用中のため、ビタミンKを含む「純ユーグレナ」の併用は厳禁（薬効減弱リスク）。\n"
 
+    # 症状や生活習慣データから飲酒習慣を推測
+    drinks_alcohol = True if "飲酒" in str(symptoms) or "お酒" in str(symptoms) or "アルコール" in str(symptoms) else False
+    
     alcohol_logic = ""
     if drinks_alcohol:
         alcohol_logic = """
@@ -276,6 +284,9 @@ def build_prompt(visit_type, medications, drinks_alcohol, user_labs):
 3. すべて1日1錠（基本量）から体調を見て開始する。
 """
 
+    # 送られてきたデータを文字列としてまとめる処理
+    all_context = f"患者情報: {patient}\n基本データ: {standard_data}\n追加データ: {additional_data}\n症状・生活習慣: {symptoms}\n過去履歴: {hist_df}"
+
     full_prompt = f"""
 {system_instruction}
 
@@ -288,11 +299,12 @@ def build_prompt(visit_type, medications, drinks_alcohol, user_labs):
 {schedule_instruction}
 
 【クライアントデータ】
-{user_labs}
+{all_context}
 
 上記に基づき、クライアントへ提示するカウンセリング解析レポートを出力してください。
 """
     return full_prompt
+
 
 
 
